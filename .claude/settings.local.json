@@ -64,7 +64,8 @@
       "mcp__playwright__playwright_click",
       "mcp__playwright__playwright_press_key",
       "Bash(powershell:*)",
-      "Bash(install.bat)"
+      "Bash(install.bat)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": [],

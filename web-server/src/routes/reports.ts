@@ -5,14 +5,15 @@ import { HtmlReporter } from '../../../src/reporters/html';
 import { ExcelReporter } from '../../../src/reporters/excel';
 import { JsonReporter } from '../../../src/reporters/json';
 import { Logger } from '../../../src/utils/logger';
+import EnhancedComparisonService from '../services/EnhancedComparisonService';
 
 // 这些服务需要在路由初始化时注入，避免循环依赖
-let comparisonService: any;
+let comparisonService: EnhancedComparisonService;
 
 const router = express.Router();
 
 // 初始化服务的函数，由主应用调用
-export const initializeServices = (comparisonSvc: any) => {
+export const initializeServices = (comparisonSvc: EnhancedComparisonService) => {
   comparisonService = comparisonSvc;
 };
 
@@ -47,7 +48,11 @@ router.post('/generate/:taskId', async (req, res) => {
       });
     }
 
-    const result = comparisonService.getTaskResult(taskId);
+    // 添加调试信息
+    console.log(`🔍 [报告生成] 尝试获取任务结果: ${taskId}`);
+    console.log(`🔍 [报告生成] 使用的服务类型: ${comparisonService.constructor.name}`);
+    
+    const result = await comparisonService.getTaskResult(taskId);
     
     if (!result) {
       console.log(`❌ [报告生成] 任务结果不存在: ${taskId}`);

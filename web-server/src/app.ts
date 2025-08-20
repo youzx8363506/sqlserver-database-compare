@@ -112,9 +112,9 @@ enhancedComparisonService.on('taskError', (data) => {
 
 console.log('🔗 [EnhancedComparisonService] 事件监听器设置完成');
 
-// 初始化路由服务—使用增强服务
+// 初始化路由服务—统一使用增强服务
 initCompareServices(socketService, enhancedComparisonService);
-initReportsServices(comparisonService); // 报告服务仍然使用原有服务
+initReportsServices(enhancedComparisonService); // 报告服务也使用增强服务
 
 // 错误处理
 app.use((error: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

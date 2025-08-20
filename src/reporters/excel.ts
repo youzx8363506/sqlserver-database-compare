@@ -12,10 +12,11 @@ export class ExcelReporter extends BaseReporter {
     
     const workbook = new ExcelJS.Workbook();
     
-    // 设置工作簿属性
+    // 设置工作簿属性 - 确保timestamp是Date对象
     workbook.creator = 'SQL Server 数据库比较工具';
-    workbook.created = result.timestamp;
-    workbook.modified = result.timestamp;
+    const timestamp = result.timestamp instanceof Date ? result.timestamp : new Date(result.timestamp);
+    workbook.created = timestamp;
+    workbook.modified = timestamp;
     
     // 创建各个工作表
     this.createSummarySheet(workbook, result);
@@ -56,7 +57,8 @@ export class ExcelReporter extends BaseReporter {
     worksheet.addRow([]);
     worksheet.addRow(['源数据库:', `${result.source.server}/${result.source.databaseName}`]);
     worksheet.addRow(['目标数据库:', `${result.target.server}/${result.target.databaseName}`]);
-    worksheet.addRow(['比较时间:', result.timestamp.toLocaleString('zh-CN')]);
+    const timestampForDisplay = result.timestamp instanceof Date ? result.timestamp : new Date(result.timestamp);
+    worksheet.addRow(['比较时间:', timestampForDisplay.toLocaleString('zh-CN')]);
     worksheet.addRow(['总体状态:', result.summary.overallStatus === 'identical' ? '相同' : '有差异']);
 
     // 添加空行

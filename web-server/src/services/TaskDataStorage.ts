@@ -122,7 +122,13 @@ class TaskDataStorage {
       const data = await fs.readFile(filePath, 'utf8');
       const result = JSON.parse(data);
       
+      // 修复日期反序列化问题：将timestamp字符串转换回Date对象
+      if (result.timestamp && typeof result.timestamp === 'string') {
+        result.timestamp = new Date(result.timestamp);
+      }
+      
       console.log(`📊 [TaskDataStorage] 读取比较结果: ${taskId}`);
+      console.log(`📅 [TaskDataStorage] 时间戳类型: ${typeof result.timestamp}, 值: ${result.timestamp}`);
       return result;
     } catch (error: any) {
       if (error.code !== 'ENOENT') {
