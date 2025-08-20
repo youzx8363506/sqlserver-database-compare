@@ -1,0 +1,51 @@
+{
+  "name": "sqlserver-database-compare",
+  "version": "1.0.0",
+  "description": "SQL Server 数据库比较工具",
+  "main": "dist/app.js",
+  "bin": {
+    "sqldb-compare": "./dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/app.ts",
+    "start": "node dist/app.js",
+    "test": "jest",
+    "lint": "eslint src/**/*.ts",
+    "clean": "rimraf dist",
+    "cli": "ts-node src/cli/index.ts"
+  },
+  "keywords": [
+    "sqlserver",
+    "database",
+    "compare",
+    "diff"
+  ],
+  "author": "开发者",
+  "license": "MIT",
+  "dependencies": {
+    "@types/chalk": "^2.2.4",
+    "chalk": "^5.6.0",
+    "commander": "^14.0.0",
+    "dotenv": "^17.2.1",
+    "exceljs": "^4.4.0",
+    "handlebars": "^4.7.8",
+    "joi": "^18.0.0",
+    "mssql": "^11.0.1",
+    "winston": "^3.17.0"
+  },
+  "devDependencies": {
+    "@types/handlebars": "^4.1.0",
+    "@types/jest": "^30.0.0",
+    "@types/mssql": "^9.1.7",
+    "@types/node": "^24.3.0",
+    "@typescript-eslint/eslint-plugin": "^8.40.0",
+    "@typescript-eslint/parser": "^8.40.0",
+    "eslint": "^9.33.0",
+    "jest": "^30.0.5",
+    "nodemon": "^3.1.10",
+    "rimraf": "^6.0.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
+  }
+}

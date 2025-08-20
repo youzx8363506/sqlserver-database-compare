@@ -1,0 +1,74 @@
+# 依赖文件
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 构建输出
+dist/
+build/
+*.tsbuildinfo
+
+# 环境配置文件
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# IDE和编辑器文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 临时文件
+tmp/
+temp/
+
+# 日志文件
+logs/
+*.log
+
+# 数据库连接配置（包含敏感信息）
+config/database.json
+*.db
+*.sqlite
+
+# 报告文件（可选，如果不想提交生成的报告）
+# reports/
+# *.html
+# *.xlsx
+
+# Windows特定文件
+*.lnk
+
+# TypeScript缓存
+*.tsbuildinfo
+
+# 测试覆盖率
+coverage/
+
+# Yarn
+.yarn/
+.pnp.*
+
+# 敏感配置文件
+secrets.json
+credentials.json
+
+# Web UI构建文件
+web-ui/dist/
+web-ui/.vite/
+
+# Web Server构建文件
+web-server/dist/
+
+# 本地开发配置
+.local/
+.cache/
