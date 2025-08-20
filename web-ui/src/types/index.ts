@@ -83,6 +83,7 @@ export interface CompleteEvent {
   taskId: string;
   result: ComparisonResult;
   summary: any;
+  reports?: Report[];  // 自动生成的报告列表
 }
 
 export interface ErrorEvent {
@@ -112,4 +113,26 @@ export interface SavedConfigInput {
   name: string;
   source: DatabaseConfig;
   target: DatabaseConfig;
+}
+
+// 比较选项类型
+export interface ComparisonOptions {
+  tablesOnly?: boolean;
+  includeData?: boolean;
+  ignorePermissions?: boolean;
+  // 报告生成配置
+  autoGenerateReports?: boolean;           // 是否自动生成报告，默认true
+  reportFormats?: ('html' | 'excel' | 'json')[]; // 要生成的报告格式
+  defaultReportFormat?: 'html' | 'excel' | 'json'; // 默认报告格式，默认html
+}
+
+// 报告生成进度事件
+export interface ReportProgressEvent {
+  format: string;
+  step: string;
+  percentage: number;
+  message: string;
+  currentFile?: string;
+  totalFiles?: number;
+  completedFiles?: number;
 }

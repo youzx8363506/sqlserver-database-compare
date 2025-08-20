@@ -94,4 +94,55 @@ export class SocketService {
     console.log(`📝 [SocketService] 发送日志到房间 task-${taskId}: [${log.level}] ${log.message.substring(0, 100)}...`);
     this.io.to(`task-${taskId}`).emit('log-message', log);
   }
+
+  // 发送报告生成专用进度更新
+  public emitReportProgress(taskId: string, reportProgress: {
+    format: string;
+    step: string;
+    percentage: number;
+    message: string;
+    currentFile?: string;
+    totalFiles?: number;
+    completedFiles?: number;
+  }) {
+    console.log(`📊 [SocketService] 发送报告生成进度到房间 task-${taskId}:`, {
+      format: reportProgress.format,
+      step: reportProgress.step,
+      percentage: reportProgress.percentage,
+      message: reportProgress.message.substring(0, 50) + '...'
+    });
+    this.logger.info(`发送报告生成进度到任务 ${taskId}: ${reportProgress.format} ${reportProgress.step} (${reportProgress.percentage}%)`);
+    
+    // 检查房间中是否有客户端
+    const room = this.io.sockets.adapter.rooms.get(`task-${taskId}`);
+    const clientCount = room ? room.size : 0;
+    console.log(`🔍 [SocketService] 报告进度推送 - 房间 task-${taskId} 中有 ${clientCount} 个客户端`);
+    
+    this.io.to(`task-${taskId}`).emit('report-progress', reportProgress);
+  }
+
+  // 增强完成通知，支持报告信息
+  public emitCompleteWithReports(taskId: string, result: any, reports?: any[]) {
+    console.log(`🎉 [SocketService] 发送完成通知（含报告）到房间 task-${taskId}:`, {
+      taskId,
+      resultStatus: result?.summary?.overallStatus,
+      tablesCount: result?.summary?.totalTables,
+      reportsCount: reports?.length || 0
+    });
+    this.logger.info(`发送完成通知到任务 ${taskId}: ${result?.summary?.overallStatus || '未知状态'}, 报告: ${reports?.length || 0} 个`);
+    
+    // 检查房间中是否有客户端
+    const room = this.io.sockets.adapter.rooms.get(`task-${taskId}`);
+    const clientCount = room ? room.size : 0;
+    console.log(`🔍 [SocketService] 房间 task-${taskId} 中有 ${clientCount} 个客户端`);
+    this.logger.info(`目标房间 task-${taskId} 中有 ${clientCount} 个客户端`);
+    
+    // 发送完成事件，包含报告信息
+    const completeData = {
+      ...result,
+      reports: reports || []
+    };
+    
+    this.io.to(`task-${taskId}`).emit('comparison-complete', completeData);
+  }
 }

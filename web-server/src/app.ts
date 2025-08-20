@@ -16,6 +16,7 @@ import configsRoutes from './routes/configs';
 // 导入服务
 import { SocketService } from './services/SocketService';
 import { ComparisonService } from './services/ComparisonService';
+import EnhancedComparisonService from './services/EnhancedComparisonService';
 
 const app = express();
 const server = createServer(app);
@@ -75,11 +76,45 @@ app.get('/api/health', (req, res) => {
 
 // 初始化服务
 const socketService = new SocketService(io);
-const comparisonService = new ComparisonService(socketService);
+const comparisonService = new ComparisonService(socketService); // 保留原有服务兼容性
+const enhancedComparisonService = new EnhancedComparisonService();
 
-// 初始化路由服务
-initCompareServices(socketService, comparisonService);
-initReportsServices(comparisonService);
+// 为EnhancedComparisonService注入SocketService
+enhancedComparisonService.setSocketService(socketService);
+
+// 设置增强服务的事件监听器
+enhancedComparisonService.on('progressUpdate', (data) => {
+  console.log(`📊 [进度更新] ${data.taskId}: ${data.progress}% - ${data.currentStep}`);
+  socketService.emitProgress(data.taskId, {
+    step: data.currentStep,
+    percentage: data.progress || 0,
+    message: data.currentStep,
+    details: data
+  });
+});
+
+enhancedComparisonService.on('taskCompleted', (data) => {
+  console.log(`✅ [任务完成] ${data.taskId}, 报告: ${data.reports?.length || 0} 个`);
+  
+  // 使用增强的完成通知方法，包含报告信息
+  if (data.reports && data.reports.length > 0) {
+    socketService.emitCompleteWithReports(data.taskId, data.result, data.reports);
+  } else {
+    // 回退到原有方法
+    socketService.emitComplete(data.taskId, data.result);
+  }
+});
+
+enhancedComparisonService.on('taskError', (data) => {
+  console.log(`❌ [任务错误] ${data.taskId}: ${data.error}`);
+  socketService.emitError(data.taskId, data.error);
+});
+
+console.log('🔗 [EnhancedComparisonService] 事件监听器设置完成');
+
+// 初始化路由服务—使用增强服务
+initCompareServices(socketService, enhancedComparisonService);
+initReportsServices(comparisonService); // 报告服务仍然使用原有服务
 
 // 错误处理
 app.use((error: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -106,7 +141,7 @@ server.listen(PORT, () => {
   const addressMsg = `📍 服务地址: http://localhost:${PORT}`;
   const healthMsg = `📋 健康检查: http://localhost:${PORT}/api/health`;
   const socketMsg = `📊 WebSocket: ws://localhost:${PORT}`;
-  const versionMsg = `🔧 代码版本: 2025-08-19-v3 (新增数据库配置持久化功能)`;
+  const versionMsg = `🔧 代码版本: 2025-08-20-v4 (新增任务数据缓存和会话恢复功能)`;
   const cwdMsg = `📁 工作目录: ${process.cwd()}`;
   const dirMsg = `📂 脚本目录: ${__dirname}`;
   

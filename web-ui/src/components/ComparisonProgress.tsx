@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card,
   Progress,
@@ -17,8 +17,9 @@ import {
   LoadingOutlined,
   ExclamationCircleOutlined,
 } from '@ant-design/icons';
-import { ProgressEvent, LogEvent, CompleteEvent, ErrorEvent } from '../types';
+import { ProgressEvent, LogEvent, CompleteEvent, ErrorEvent, ReportProgressEvent } from '../types';
 import socketService from '../services/socket';
+import { compareApi } from '../services/api';
 
 const { Title, Text } = Typography;
 
@@ -45,6 +46,14 @@ const ComparisonProgress: React.FC<ComparisonProgressProps> = ({
   const [isSocketConnected, setIsSocketConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  
+  // 新增：API轮询状态
+  const [pollingEnabled, setPollingEnabled] = useState(false);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // 新增：报告生成进度状态
+  const [reportProgress, setReportProgress] = useState<ReportProgressEvent | null>(null);
+  const [showReportProgress, setShowReportProgress] = useState(false);
 
   // 添加日志条目
   const addLog = (log: LogEvent) => {
@@ -54,6 +63,65 @@ const ComparisonProgress: React.FC<ComparisonProgressProps> = ({
     };
     setLogs(prev => [logEntry, ...prev.slice(0, 99)]); // 保持最新100条日志
   };
+
+  // 新增：API 轮询函数
+  const pollTaskStatus = useCallback(async () => {
+    if (!taskId || isSocketConnected) return;
+    
+    try {
+      console.log(`🔄 [ComparisonProgress] API轮询获取任务状态: ${taskId}`);
+      const response = await compareApi.getTaskStatus(taskId);
+      
+      if (response.success && response.data?.task) {
+        const taskStatus = response.data.task;
+        console.log(`📊 [ComparisonProgress] 轮询获取状态: ${taskStatus.status} (${taskStatus.progress}%)`);
+        
+        // 更新进度状态
+        setProgress(taskStatus.progress);
+        setCurrentStep(taskStatus.currentStep);
+        
+        // 添加日志条目
+        addLog({
+          level: 'info',
+          message: `[轮询更新] ${taskStatus.currentStep}`,
+          timestamp: new Date().toISOString(),
+        });
+        
+        // 检查任务完成状态
+        if (taskStatus.status === 'completed') {
+          console.log(`🎉 [ComparisonProgress] 通过轮询检测到任务完成: ${taskId}`);
+          setStatus('completed');
+          
+          // 获取比较结果
+          try {
+            const resultResponse = await compareApi.getTaskResult(taskId);
+            if (resultResponse.success && resultResponse.data?.result) {
+              console.log(`📊 [ComparisonProgress] 通过API获取到比较结果`);
+              
+              // 统一数据格式：API轮询返回ComparisonResult，直接传递给HomePage
+              console.log('🔄 [API轮询] 向父组件传递ComparisonResult格式数据');
+              onComplete?.(resultResponse.data.result);
+              
+              // 停止轮询
+              setPollingEnabled(false);
+            }
+          } catch (resultError) {
+            console.error('获取比较结果失败:', resultError);
+          }
+        } else if (taskStatus.status === 'failed') {
+          console.log(`❌ [ComparisonProgress] 通过轮询检测到任务错误: ${taskId}`);
+          setStatus('failed');
+          setError(taskStatus.error || '任务执行失败');
+          onError?.(taskStatus.error || '任务执行失败');
+          
+          // 停止轮询
+          setPollingEnabled(false);
+        }
+      }
+    } catch (error: any) {
+      console.error('❌ [ComparisonProgress] API轮询失败:', error);
+    }
+  }, [taskId, isSocketConnected, onComplete, onError]);
 
   // 连接WebSocket并设置监听器
   const setupWebSocket = async () => {
@@ -94,13 +162,38 @@ const ComparisonProgress: React.FC<ComparisonProgressProps> = ({
       socketService.onComplete((result: CompleteEvent) => {
         console.log('🎉 [前端ComparisonProgress] 收到完成通知:', result);
         setProgress(100);
-        setCurrentStep('比较完成');
+        
+        // 更新完成消息，包含报告信息
+        const hasReports = result.reports && result.reports.length > 0;
+        const completionMessage = hasReports 
+          ? `比较和报告生成完成！共生成 ${result.reports?.length || 0} 个报告文件`
+          : '数据库比较完成';
+          
+        setCurrentStep(completionMessage);
         setStatus('completed');
+        
         addLog({
           level: 'info',
-          message: '数据库比较已完成！',
+          message: completionMessage,
           timestamp: new Date().toISOString(),
         });
+        
+        // 如果有报告信息，添加报告详情日志
+        if (hasReports) {
+          result.reports?.forEach((report) => {
+            addLog({
+              level: 'info',
+              message: `✅ 报告已生成: ${report.format.toUpperCase()} 格式 - ${report.fileName}`,
+              timestamp: new Date().toISOString(),
+            });
+          });
+          
+          // 隐藏报告进度详情
+          setShowReportProgress(false);
+        }
+        
+        // 统一数据格式：WebSocket返回CompleteEvent，传递给HomePage
+        console.log('📡 [WebSocket] 向父组件传递CompleteEvent格式数据（含报告）');
         onComplete?.(result);
       });
 
@@ -121,16 +214,40 @@ const ComparisonProgress: React.FC<ComparisonProgressProps> = ({
         addLog(logData);
       });
 
+      // 新增：监听报告生成进度
+      socketService.onReportProgress((reportData: ReportProgressEvent) => {
+        console.log('📊 [前端ComparisonProgress] 收到报告生成进度:', reportData);
+        setReportProgress(reportData);
+        setShowReportProgress(true);
+        
+        // 添加报告生成专用日志
+        addLog({
+          level: reportData.step === 'error' ? 'error' : 'info',
+          message: `[报告生成] ${reportData.message}`,
+          timestamp: new Date().toISOString(),
+        });
+        
+        // 如果报告生成完成，延迟隐藏报告进度详情
+        if (reportData.step === 'completed') {
+          setTimeout(() => {
+            setShowReportProgress(false);
+          }, 3000);
+        }
+      });
+
     } catch (error: any) {
       console.error('❌ [前端ComparisonProgress] WebSocket连接失败:', error);
       setConnectionStatus('error');
       setConnectionError(error.message || '连接失败');
       setIsSocketConnected(false);
       
-      // 添加用户友好的错误提示
+      // 启用API轮询作为后备方案
+      console.log('🔄 [ComparisonProgress] WebSocket失败，启用API轮询后备方案');
+      setPollingEnabled(true);
+      
       addLog({
-        level: 'error',
-        message: `WebSocket连接失败: ${error.message}`,
+        level: 'warn',
+        message: `WebSocket连接失败，已启用API轮询模式: ${error.message}`,
         timestamp: new Date().toISOString(),
       });
     }
@@ -140,8 +257,28 @@ const ComparisonProgress: React.FC<ComparisonProgressProps> = ({
   const reconnectWebSocket = () => {
     socketService.disconnect();
     setIsSocketConnected(false);
+    setPollingEnabled(false); // 停止轮询
     setupWebSocket();
   };
+
+  // 新增：轮询管理 Effect
+  useEffect(() => {
+    if (pollingEnabled && !isSocketConnected) {
+      console.log(`🔄 [ComparisonProgress] 启动API轮询，间隔: 2秒`);
+      pollingIntervalRef.current = setInterval(pollTaskStatus, 2000);
+      
+      // 立即执行一次轮询
+      pollTaskStatus();
+      
+      return () => {
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+          console.log(`🛑 [ComparisonProgress] 停止API轮询`);
+        }
+      };
+    }
+  }, [pollingEnabled, isSocketConnected, pollTaskStatus]);
 
   // 组件挂载时设置WebSocket
   useEffect(() => {
@@ -151,6 +288,12 @@ const ComparisonProgress: React.FC<ComparisonProgressProps> = ({
       // 组件卸载时清理
       socketService.leaveTask(taskId);
       socketService.removeAllListeners();
+      
+      // 清理轮询定时器
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
     };
   }, [taskId]);
 
@@ -190,7 +333,7 @@ const ComparisonProgress: React.FC<ComparisonProgressProps> = ({
           return {
             status: 'success' as const,
             title: 'WebSocket连接正常',
-            description: `已连接到服务器并加入任务房间 ${taskId}`,
+            description: `已连接到服务器并加入任务房间 ${taskId}，实时接收进度更新`,
             icon: <CheckCircleOutlined style={{ color: '#52c41a' }} />,
           };
         case 'connecting':
@@ -202,16 +345,22 @@ const ComparisonProgress: React.FC<ComparisonProgressProps> = ({
           };
         case 'error':
           return {
-            status: 'error' as const,
-            title: 'WebSocket连接失败',
-            description: connectionError || '无法连接到服务器',
-            icon: <CloseCircleOutlined style={{ color: '#ff4d4f' }} />,
+            status: pollingEnabled ? 'warning' : 'error' as const,
+            title: pollingEnabled ? 'WebSocket失败，使用API轮询' : 'WebSocket连接失败',
+            description: pollingEnabled 
+              ? `WebSocket连接失败，已启用API轮询模式获取进度更新。${connectionError}` 
+              : connectionError || '无法连接到服务器',
+            icon: pollingEnabled 
+              ? <ExclamationCircleOutlined style={{ color: '#faad14' }} />
+              : <CloseCircleOutlined style={{ color: '#ff4d4f' }} />,
           };
         case 'disconnected':
           return {
             status: 'warning' as const,
             title: 'WebSocket连接断开',
-            description: '与服务器的连接已断开，可能无法接收实时更新',
+            description: pollingEnabled
+              ? '与服务器的连接已断开，正在使用API轮询获取进度更新'
+              : '与服务器的连接已断开，可能无法接收实时更新',
             icon: <ExclamationCircleOutlined style={{ color: '#faad14' }} />,
           };
       }
@@ -225,16 +374,28 @@ const ComparisonProgress: React.FC<ComparisonProgressProps> = ({
           <Space>
             {config.icon}
             {config.title}
+            {pollingEnabled && (
+              <Tag color="processing">
+                API轮询模式
+              </Tag>
+            )}
           </Space>
         }
         description={config.description}
-        type={config.status}
+        type={config.status as "success" | "info" | "warning" | "error"}
         showIcon={false}
         action={
           (connectionStatus === 'error' || connectionStatus === 'disconnected') && (
-            <Button size="small" onClick={reconnectWebSocket}>
-              重新连接
-            </Button>
+            <Space>
+              <Button size="small" onClick={reconnectWebSocket}>
+                重新连接
+              </Button>
+              {!pollingEnabled && (
+                <Button size="small" type="primary" onClick={() => setPollingEnabled(true)}>
+                  启用轮询
+                </Button>
+              )}
+            </Space>
           )
         }
         style={{ marginBottom: 16 }}
@@ -283,6 +444,43 @@ const ComparisonProgress: React.FC<ComparisonProgressProps> = ({
             }}
           />
         </div>
+
+        {/* 报告生成进度详情 */}
+        {showReportProgress && reportProgress && (
+          <Card size="small" title="报告生成详情" style={{ backgroundColor: '#f8f9fa' }}>
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <div>
+                <Text strong>格式: </Text>
+                <Tag color="blue">{reportProgress.format.toUpperCase()}</Tag>
+                {reportProgress.currentFile && (
+                  <>
+                    <Text strong> 文件: </Text>
+                    <Text code>{reportProgress.currentFile}</Text>
+                  </>
+                )}
+              </div>
+              
+              {reportProgress.totalFiles && reportProgress.completedFiles !== undefined && (
+                <div>
+                  <Text strong>进度: </Text>
+                  <Text>{reportProgress.completedFiles + 1} / {reportProgress.totalFiles}</Text>
+                  <Progress
+                    percent={Math.round(((reportProgress.completedFiles + 1) / reportProgress.totalFiles) * 100)}
+                    size="small"
+                    status={reportProgress.step === 'error' ? 'exception' : 'active'}
+                    style={{ marginTop: 4 }}
+                  />
+                </div>
+              )}
+              
+              <div>
+                <Text type={reportProgress.step === 'error' ? 'danger' : 'secondary'}>
+                  {reportProgress.message}
+                </Text>
+              </div>
+            </Space>
+          </Card>
+        )}
 
         {/* WebSocket连接状态 */}
         {!isSocketConnected && (

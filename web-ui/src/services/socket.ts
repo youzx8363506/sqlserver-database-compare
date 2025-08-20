@@ -1,5 +1,5 @@
 import { io, Socket } from 'socket.io-client';
-import { ProgressEvent, LogEvent, CompleteEvent, ErrorEvent } from '../types';
+import { ProgressEvent, LogEvent, CompleteEvent, ErrorEvent, ReportProgressEvent } from '../types';
 
 class SocketService {
   private socket: Socket | null = null;
@@ -135,6 +135,17 @@ class SocketService {
     }
   }
 
+  // 监听报告生成进度
+  onReportProgress(callback: (progress: ReportProgressEvent) => void): void {
+    if (this.socket) {
+      console.log(`👂 [前端WebSocket] 开始监听 report-progress 事件`);
+      this.socket.on('report-progress', (data) => {
+        console.log(`📊 [前端WebSocket] 收到报告进度事件:`, data);
+        callback(data);
+      });
+    }
+  }
+
   // 移除所有监听器
   removeAllListeners(): void {
     if (this.socket) {
@@ -142,6 +153,7 @@ class SocketService {
       this.socket.removeAllListeners('comparison-complete');
       this.socket.removeAllListeners('comparison-error');
       this.socket.removeAllListeners('log-message');
+      this.socket.removeAllListeners('report-progress');
     }
   }
 

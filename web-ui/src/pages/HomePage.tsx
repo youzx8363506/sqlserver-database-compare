@@ -27,6 +27,9 @@ import ConfigManager from '../components/ConfigManager';
 import { DatabaseConfig, ComparisonResult, DatabaseConfigPair } from '../types';
 import { compareApi, configApi } from '../services/api';
 import socketService from '../services/socket';
+import TaskCacheManager, { TaskSession } from '../services/TaskCacheManager';
+import SessionRecoveryPrompt from '../components/SessionRecoveryPrompt';
+import { useSessionRecovery } from '../hooks/useSessionRecovery';
 
 const { Header, Content } = Layout;
 const { Title, Paragraph } = Typography;
@@ -41,6 +44,10 @@ const HomePage: React.FC = () => {
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [webSocketStatus, setWebSocketStatus] = useState<'connected' | 'connecting' | 'disconnected'>('disconnected');
+  
+  // 缓存管理器和会话恢复
+  const cacheManager = TaskCacheManager.getInstance();
+  const { getRecommendedStep } = useSessionRecovery();
 
   // 步骤配置
   const steps = [
@@ -210,6 +217,19 @@ const HomePage: React.FC = () => {
         const taskId = response.data?.taskId;
         console.log(`✅ [前端] 比较任务启动成功，任务ID: ${taskId}`);
         
+        // 缓存任务配置信息
+        if (taskId) {
+          cacheManager.cacheTaskSession(taskId, {
+            taskId,
+            sourceConfig,
+            targetConfig,
+            status: 'pending',
+            progress: 0,
+            currentStep: 1,
+            createdAt: new Date().toISOString()
+          });
+        }
+        
         setComparisonTaskId(taskId || null);
         setCurrentStep(1); // 立即切换到进度页面
         
@@ -229,13 +249,54 @@ const HomePage: React.FC = () => {
   // 比较完成处理
   const handleComparisonComplete = (result: any) => {
     console.log('🎉 [前端HomePage] 收到比较完成通知:', result);
-    setComparisonResult(result.result);
+    console.log('🔍 [调试] 比较完成数据结构:', JSON.stringify(result, null, 2));
+    
+    // 统一数据格式处理：兼容WebSocket和API轮询两种数据结构
+    let actualResult: ComparisonResult;
+    
+    if (result && result.result) {
+      // WebSocket格式：CompleteEvent {taskId, result: ComparisonResult, summary}
+      console.log('📡 [数据处理] 检测到WebSocket格式数据');
+      actualResult = result.result;
+    } else if (result && (result.summary || result.differences)) {
+      // API轮询格式：直接是ComparisonResult
+      console.log('🔄 [数据处理] 检测到API轮询格式数据');
+      actualResult = result;
+    } else {
+      // 数据格式异常
+      console.error('❌ [数据处理] 未知的比较结果格式:', result);
+      message.error('比较结果数据格式异常，请重新进行比较');
+      return;
+    }
+    
+    // 验证比较结果数据完整性
+    if (!actualResult || !actualResult.differences) {
+      console.error('❌ [数据验证] 比较结果数据不完整:', actualResult);
+      message.error('比较结果数据不完整，请重新进行比较');
+      return;
+    }
+    
+    console.log('✅ [数据处理] 比较结果数据验证通过:', actualResult);
+    
+    setComparisonResult(actualResult);
     setCurrentStep(2);
+    
+    // 缓存完成状态和结果
+    if (comparisonTaskId) {
+      cacheManager.cacheComparisonResult(comparisonTaskId, actualResult);
+      cacheManager.updateTaskStatus(comparisonTaskId, 'completed', 100, 2);
+    }
+    
     message.success('数据库比较已完成！');
   };
 
   // 比较错误处理
   const handleComparisonError = (error: string) => {
+    // 更新缓存中的错误状态
+    if (comparisonTaskId) {
+      cacheManager.updateTaskStatus(comparisonTaskId, 'error', 0, currentStep, error);
+    }
+    
     message.error(`比较过程发生错误: ${error}`);
   };
 
@@ -246,6 +307,9 @@ const HomePage: React.FC = () => {
     setTargetConfig(null);
     setComparisonTaskId(null);
     setComparisonResult(null);
+    
+    // 清理过期缓存（可选）
+    cacheManager.cleanupExpiredCache();
   };
 
   // 应用配置
@@ -269,6 +333,28 @@ const HomePage: React.FC = () => {
     return sourceConfig && targetConfig;
   };
 
+  // 处理会话恢复
+  const handleSessionRecover = (taskId: string, session: TaskSession) => {
+    console.log('🔄 恢复会话数据:', session);
+    
+    // 恢复状态
+    setComparisonTaskId(taskId);
+    setSourceConfig(session.sourceConfig);
+    setTargetConfig(session.targetConfig);
+    
+    if (session.result) {
+      setComparisonResult(session.result);
+      setCurrentStep(2); // 跳转到结果页面
+      message.success('会话恢复成功！已跳转到比较结果页面');
+    } else if (session.status === 'running') {
+      setCurrentStep(1); // 跳转到进度页面
+      message.success('会话恢复成功！继续监控比较进度');
+    } else {
+      setCurrentStep(getRecommendedStep(session)); // 根据状态确定步骤
+      message.success('会话恢复成功！配置信息已自动填充');
+    }
+  };
+
   return (
     <Layout style={{ minHeight: '100vh', background: '#f0f2f5' }}>
       <Header style={{ background: '#fff', padding: '0 24px', borderBottom: '1px solid #f0f0f0' }}>
@@ -282,13 +368,20 @@ const HomePage: React.FC = () => {
             </Space>
           </Col>
           <Col>
-            <WebSocketStatusIndicator />
+            <Space>
+              <Button type="primary" size="small">主页</Button>
+              <Button size="small">连接测试</Button>
+              <WebSocketStatusIndicator />
+            </Space>
           </Col>
         </Row>
       </Header>
 
-      <Content style={{ padding: '24px' }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+      <Content style={{ padding: '24px', overflow: 'auto' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto', width: '100%' }}>
+          {/* 会话恢复提示 */}
+          <SessionRecoveryPrompt onRecover={handleSessionRecover} />
+          
           {/* 步骤指示器 */}
           <Card style={{ marginBottom: 24 }}>
             <Steps current={currentStep} items={steps} />
@@ -324,6 +417,7 @@ const HomePage: React.FC = () => {
                 <Col xs={24} lg={12}>
                   <DatabaseConfigForm
                     title="源数据库"
+                    formId="source"
                     initialValues={configLoaded && sourceConfig ? sourceConfig : undefined}
                     onConfigChange={setSourceConfig}
                     onTestSuccess={(config) => {
@@ -335,6 +429,7 @@ const HomePage: React.FC = () => {
                 <Col xs={24} lg={12}>
                   <DatabaseConfigForm
                     title="目标数据库"
+                    formId="target"
                     initialValues={configLoaded && targetConfig ? targetConfig : undefined}
                     onConfigChange={setTargetConfig}
                     onTestSuccess={(config) => {
@@ -393,19 +488,52 @@ const HomePage: React.FC = () => {
             </Space>
           )}
 
-          {currentStep === 2 && comparisonResult && comparisonTaskId && (
+          {currentStep === 2 && comparisonTaskId && (
             <Space direction="vertical" style={{ width: '100%' }} size="large">
-              <Alert
-                message="数据库比较完成"
-                description="比较结果已生成，您可以查看详细的差异信息并生成报告文件。"
-                type="success"
-                showIcon
-              />
+              {comparisonResult ? (
+                <>
+                  <Alert
+                    message="数据库比较完成"
+                    description="比较结果已生成，您可以查看详细的差异信息并生成报告文件。"
+                    type="success"
+                    showIcon
+                  />
 
-              <ComparisonResults
-                taskId={comparisonTaskId}
-                result={comparisonResult}
-              />
+                  <ComparisonResults
+                    taskId={comparisonTaskId}
+                    result={comparisonResult}
+                  />
+                </>
+              ) : (
+                <>
+                  <Alert
+                    message="正在加载比较结果..."
+                    description="比较已完成，正在获取详细结果数据，请稍候。"
+                    type="info"
+                    showIcon
+                  />
+                  
+                  <Card>
+                    <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                      <Space direction="vertical" size="large">
+                        <div style={{ fontSize: '16px', color: '#666' }}>
+                          正在处理比较结果数据...
+                        </div>
+                        <Button 
+                          type="primary" 
+                          onClick={() => {
+                            console.log('🔄 手动重新获取比较结果');
+                            // 手动重新获取结果的逻辑可以在这里添加
+                            setCurrentStep(1);
+                          }}
+                        >
+                          返回进度页面
+                        </Button>
+                      </Space>
+                    </div>
+                  </Card>
+                </>
+              )}
 
               <Card>
                 <Space style={{ width: '100%', justifyContent: 'center' }}>

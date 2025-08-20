@@ -1,16 +1,17 @@
 import express from 'express';
 import { DatabaseConfig } from '../../../src/types';
+import EnhancedComparisonService from '../services/EnhancedComparisonService';
 
 // 这些服务需要在路由初始化时注入，避免循环依赖
-let comparisonService: any;
+let enhancedComparisonService: EnhancedComparisonService;
 let socketService: any;
 
 const router = express.Router();
 
 // 初始化服务的函数，由主应用调用
-export const initializeServices = (socketSvc: any, comparisonSvc: any) => {
+export const initializeServices = (socketSvc: any, enhancedCompSvc: EnhancedComparisonService) => {
   socketService = socketSvc;
-  comparisonService = comparisonSvc;
+  enhancedComparisonService = enhancedCompSvc;
 };
 
 // 启动数据库比较任务
@@ -59,8 +60,8 @@ router.post('/start', async (req, res) => {
       }
     };
 
-    // 创建比较任务
-    const taskId = await comparisonService.createTask(sourceConfig, targetConfig, options);
+    // 创建并启动比较任务
+    const taskId = await enhancedComparisonService.createAndStartTask(sourceConfig, targetConfig, options);
 
     res.json({
       success: true,
@@ -82,7 +83,7 @@ router.post('/start', async (req, res) => {
 });
 
 // 获取比较任务状态
-router.get('/status/:taskId', (req, res) => {
+router.get('/status/:taskId', async (req, res) => {
   try {
     const { taskId } = req.params;
     
@@ -93,7 +94,7 @@ router.get('/status/:taskId', (req, res) => {
       });
     }
 
-    const status = comparisonService.getTaskStatus(taskId);
+    const status = await enhancedComparisonService.getTaskStatus(taskId);
     
     if (!status) {
       return res.status(404).json({
@@ -110,6 +111,7 @@ router.get('/status/:taskId', (req, res) => {
         progress: status.progress,
         currentStep: status.currentStep,
         createdAt: status.createdAt,
+        updatedAt: status.updatedAt,
         completedAt: status.completedAt,
         error: status.error
       }
@@ -126,7 +128,7 @@ router.get('/status/:taskId', (req, res) => {
 });
 
 // 获取比较结果
-router.get('/result/:taskId', (req, res) => {
+router.get('/result/:taskId', async (req, res) => {
   try {
     const { taskId } = req.params;
     
@@ -137,7 +139,7 @@ router.get('/result/:taskId', (req, res) => {
       });
     }
 
-    const result = comparisonService.getTaskResult(taskId);
+    const result = await enhancedComparisonService.getTaskResult(taskId);
     
     if (!result) {
       return res.status(404).json({
@@ -161,9 +163,9 @@ router.get('/result/:taskId', (req, res) => {
             modified: result.differences.tables.modified
           },
           indexes: {
-            added: result.differences.indexes?.added || [],
-            removed: result.differences.indexes?.removed || [],
-            modified: result.differences.indexes?.modified || []
+            added: [],
+            removed: [],
+            modified: []
           },
           views: {
             added: result.differences.views.added,
@@ -207,7 +209,7 @@ router.get('/result/:taskId', (req, res) => {
 });
 
 // 获取详细差异数据
-router.get('/differences/:taskId/:type', (req, res) => {
+router.get('/differences/:taskId/:type', async (req, res) => {
   try {
     const { taskId, type } = req.params;
     const { page = 1, limit = 50 } = req.query;
@@ -221,7 +223,7 @@ router.get('/differences/:taskId/:type', (req, res) => {
       });
     }
 
-    const result = comparisonService.getTaskResult(taskId);
+    const result = await enhancedComparisonService.getTaskResult(taskId);
     
     if (!result) {
       console.log(`❌ [差异数据] 任务结果不存在: ${taskId}`);
@@ -349,13 +351,281 @@ router.get('/differences/:taskId/:type', (req, res) => {
   }
 });
 
-// 清理过期任务
-router.delete('/cleanup', (req, res) => {
+// 获取完整任务数据（包含结果和报告）
+router.get('/task/:taskId/full', async (req, res) => {
   try {
-    comparisonService.cleanupOldTasks();
+    const { taskId } = req.params;
+    
+    if (!taskId) {
+      return res.status(400).json({
+        success: false,
+        error: '任务ID不能为空'
+      });
+    }
+
+    const fullData = await enhancedComparisonService.getFullTaskData(taskId);
+    
+    if (!fullData) {
+      return res.status(404).json({
+        success: false,
+        error: '任务不存在'
+      });
+    }
+
+    console.log(`📦 [完整任务] 返回完整任务数据: ${taskId}`);
+    console.log(`   - 任务状态: ${fullData.task.status}`);
+    console.log(`   - 有结果: ${!!fullData.result}`);
+    console.log(`   - 报告数量: ${fullData.reports.length}`);
+
     res.json({
       success: true,
-      message: '过期任务清理完成'
+      data: {
+        task: {
+          id: fullData.task.taskId,
+          sourceConfig: fullData.task.sourceConfig,
+          targetConfig: fullData.task.targetConfig,
+          status: fullData.task.status,
+          progress: fullData.task.progress,
+          currentStep: fullData.task.currentStep,
+          createdAt: fullData.task.createdAt,
+          updatedAt: fullData.task.updatedAt,
+          completedAt: fullData.task.completedAt,
+          error: fullData.task.error
+        },
+        result: fullData.result,
+        reports: fullData.reports
+      }
+    });
+
+  } catch (error: any) {
+    console.error('获取完整任务数据失败:', error);
+    res.status(500).json({
+      success: false,
+      error: '获取完整任务数据失败',
+      details: error.message
+    });
+  }
+});
+
+// 获取任务历史列表
+router.get('/history', async (req, res) => {
+  try {
+    const { limit = 20, offset = 0 } = req.query;
+    
+    const limitNum = parseInt(limit as string);
+    const offsetNum = parseInt(offset as string);
+    
+    const history = await enhancedComparisonService.getTaskHistory(limitNum, offsetNum);
+    
+    console.log(`📋 [任务历史] 返回任务历史: ${history.length} 条记录`);
+
+    res.json({
+      success: true,
+      data: history.map(task => ({
+        id: task.taskId,
+        sourceDatabase: task.sourceConfig.database,
+        targetDatabase: task.targetConfig.database,
+        status: task.status,
+        progress: task.progress,
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt,
+        completedAt: task.completedAt,
+        error: task.error
+      })),
+      pagination: {
+        limit: limitNum,
+        offset: offsetNum,
+        total: history.length
+      }
+    });
+
+  } catch (error: any) {
+    console.error('获取任务历史失败:', error);
+    res.status(500).json({
+      success: false,
+      error: '获取任务历史失败',
+      details: error.message
+    });
+  }
+});
+
+// 获取任务报告
+router.get('/reports/:taskId', async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    
+    if (!taskId) {
+      return res.status(400).json({
+        success: false,
+        error: '任务ID不能为空'
+      });
+    }
+
+    const reports = await enhancedComparisonService.getTaskReports(taskId);
+    
+    console.log(`📋 [任务报告] 返回任务报告: ${taskId}, 数量: ${reports.length}`);
+
+    res.json({
+      success: true,
+      data: reports
+    });
+
+  } catch (error: any) {
+    console.error('获取任务报告失败:', error);
+    res.status(500).json({
+      success: false,
+      error: '获取任务报告失败',
+      details: error.message
+    });
+  }
+});
+
+// 关联报告到任务
+router.post('/reports/:taskId', async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const reportData = req.body;
+    
+    if (!taskId) {
+      return res.status(400).json({
+        success: false,
+        error: '任务ID不能为空'
+      });
+    }
+
+    if (!reportData.fileName || !reportData.format || !reportData.filePath) {
+      return res.status(400).json({
+        success: false,
+        error: '报告信息不完整，需要包含fileName、format、filePath'
+      });
+    }
+
+    await enhancedComparisonService.linkReportToTask(taskId, reportData);
+    
+    console.log(`🔗 [关联报告] 报告已关联: ${taskId} -> ${reportData.format}`);
+
+    res.json({
+      success: true,
+      message: '报告关联成功'
+    });
+
+  } catch (error: any) {
+    console.error('关联报告失败:', error);
+    res.status(500).json({
+      success: false,
+      error: '关联报告失败',
+      details: error.message
+    });
+  }
+});
+
+// 重试失败的任务
+router.post('/retry/:taskId', async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    
+    if (!taskId) {
+      return res.status(400).json({
+        success: false,
+        error: '任务ID不能为空'
+      });
+    }
+
+    const success = await enhancedComparisonService.retryTask(taskId);
+    
+    if (success) {
+      console.log(`🔄 [重试任务] 任务重试成功: ${taskId}`);
+      res.json({
+        success: true,
+        message: '任务重试成功'
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: '任务无法重试，可能不存在或正在运行中'
+      });
+    }
+
+  } catch (error: any) {
+    console.error('重试任务失败:', error);
+    res.status(500).json({
+      success: false,
+      error: '重试任务失败',
+      details: error.message
+    });
+  }
+});
+
+// 取消运行中的任务
+router.post('/cancel/:taskId', async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    
+    if (!taskId) {
+      return res.status(400).json({
+        success: false,
+        error: '任务ID不能为空'
+      });
+    }
+
+    const success = await enhancedComparisonService.cancelTask(taskId);
+    
+    if (success) {
+      console.log(`🛑 [取消任务] 任务取消成功: ${taskId}`);
+      res.json({
+        success: true,
+        message: '任务取消成功'
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: '任务无法取消，可能不存在或未在运行中'
+      });
+    }
+
+  } catch (error: any) {
+    console.error('取消任务失败:', error);
+    res.status(500).json({
+      success: false,
+      error: '取消任务失败',
+      details: error.message
+    });
+  }
+});
+
+// 获取服务统计信息
+router.get('/stats', async (req, res) => {
+  try {
+    const stats = await enhancedComparisonService.getServiceStats();
+    
+    console.log(`📊 [服务统计] 返回服务统计信息`);
+
+    res.json({
+      success: true,
+      data: stats
+    });
+
+  } catch (error: any) {
+    console.error('获取服务统计失败:', error);
+    res.status(500).json({
+      success: false,
+      error: '获取服务统计失败',
+      details: error.message
+    });
+  }
+});
+
+// 清理过期任务
+router.delete('/cleanup', async (req, res) => {
+  try {
+    const { maxAge } = req.query;
+    const maxAgeMs = maxAge ? parseInt(maxAge as string) : undefined;
+    
+    const cleanedCount = await enhancedComparisonService.cleanupOldTasks(maxAgeMs);
+    res.json({
+      success: true,
+      data: { cleanedCount },
+      message: `清理完成，共清理了 ${cleanedCount} 个过期任务`
     });
   } catch (error: any) {
     console.error('清理任务失败:', error);

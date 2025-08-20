@@ -28,6 +28,7 @@ interface DatabaseConfigFormProps {
   onConfigChange?: (config: DatabaseConfig) => void;
   onTestSuccess?: (config: DatabaseConfig) => void;
   disabled?: boolean;
+  formId?: string; // 添加formId属性用于生成唯一ID
 }
 
 const DatabaseConfigForm: React.FC<DatabaseConfigFormProps> = ({
@@ -36,6 +37,7 @@ const DatabaseConfigForm: React.FC<DatabaseConfigFormProps> = ({
   onConfigChange,
   onTestSuccess,
   disabled = false,
+  formId = 'default', // 默认formId
 }) => {
   const [form] = Form.useForm();
   const [testing, setTesting] = useState(false);
@@ -207,6 +209,7 @@ const DatabaseConfigForm: React.FC<DatabaseConfigFormProps> = ({
           ]}
         >
           <Input
+            id={`${formId}-server`}
             placeholder="例如：localhost 或 192.168.1.100 或 SERVER\\INSTANCE"
             size="large"
           />
@@ -226,6 +229,7 @@ const DatabaseConfigForm: React.FC<DatabaseConfigFormProps> = ({
           ]}
         >
           <Input
+            id={`${formId}-database`}
             placeholder="例如：MyDatabase"
             size="large"
           />
@@ -237,6 +241,7 @@ const DatabaseConfigForm: React.FC<DatabaseConfigFormProps> = ({
           rules={[{ required: true, message: '请选择认证方式' }]}
         >
           <Select
+            id={`${formId}-authType`}
             onChange={handleAuthTypeChange}
             size="large"
             placeholder="选择认证方式"
@@ -263,6 +268,7 @@ const DatabaseConfigForm: React.FC<DatabaseConfigFormProps> = ({
               ]}
             >
               <Input
+                id={`${formId}-username`}
                 placeholder="SQL Server 用户名"
                 size="large"
               />
@@ -282,6 +288,7 @@ const DatabaseConfigForm: React.FC<DatabaseConfigFormProps> = ({
               ]}
             >
               <Input.Password
+                id={`${formId}-password`}
                 placeholder="SQL Server 密码"
                 size="large"
               />

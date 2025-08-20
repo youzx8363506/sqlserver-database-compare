@@ -44,7 +44,27 @@
       "Bash(git push:*)",
       "Bash(git reset:*)",
       "Bash(git rm:*)",
-      "Bash(telnet:*)"
+      "Bash(telnet:*)",
+      "Bash(ping:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(npx:*)",
+      "Bash(npm info:*)",
+      "Bash(npm search:*)",
+      "mcp__playwright__playwright_navigate",
+      "mcp__playwright__playwright_screenshot",
+      "mcp__playwright__playwright_fill",
+      "mcp__playwright__playwright_get_visible_html",
+      "mcp__playwright__playwright_console_logs",
+      "mcp__playwright__playwright_get_visible_text",
+      "mcp__playwright__playwright_evaluate",
+      "mcp__playwright__playwright_select",
+      "mcp__playwright__playwright_custom_user_agent",
+      "mcp__playwright__playwright_close",
+      "Bash(stop.bat)",
+      "mcp__playwright__playwright_click",
+      "mcp__playwright__playwright_press_key",
+      "Bash(powershell:*)",
+      "Bash(install.bat)"
     ],
     "deny": [],
     "ask": [],
@@ -53,7 +73,8 @@
       "D:\\code",
       "D:\\",
       "N:\\备份\\sqlserverdatabasecompare\\reports",
-      "N:\\"
+      "N:\\",
+      "D:\\d\\code\\sqlserverdatabasecompare"
     ]
   }
 }

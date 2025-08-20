@@ -109,6 +109,103 @@ export const compareApi = {
     return response.data;
   },
 
+  // 获取完整任务数据（包含结果和报告）
+  getFullTaskData: async (taskId: string): Promise<ApiResponse<{
+    task: ComparisonTask & {
+      sourceConfig: DatabaseConfig;
+      targetConfig: DatabaseConfig;
+    };
+    result: ComparisonResult | null;
+    reports: Report[];
+  }>> => {
+    console.log(`📦 [API] 获取完整任务数据: ${taskId}`);
+    const response = await api.get(`/compare/task/${taskId}/full`);
+    console.log(`📥 [API] 完整任务数据响应:`, response.data);
+    return response.data;
+  },
+
+  // 获取任务历史列表
+  getTaskHistory: async (limit: number = 20, offset: number = 0): Promise<ApiResponse<{
+    data: Array<{
+      id: string;
+      sourceDatabase: string;
+      targetDatabase: string;
+      status: string;
+      progress: number;
+      createdAt: string;
+      updatedAt: string;
+      completedAt?: string;
+      error?: string;
+    }>;
+    pagination: {
+      limit: number;
+      offset: number;
+      total: number;
+    };
+  }>> => {
+    console.log(`📋 [API] 获取任务历史: limit=${limit}, offset=${offset}`);
+    const response = await api.get('/compare/history', {
+      params: { limit, offset }
+    });
+    console.log(`📥 [API] 任务历史响应:`, response.data);
+    return response.data;
+  },
+
+  // 获取任务报告
+  getTaskReports: async (taskId: string): Promise<ApiResponse<Report[]>> => {
+    console.log(`📋 [API] 获取任务报告: ${taskId}`);
+    const response = await api.get(`/compare/reports/${taskId}`);
+    console.log(`📥 [API] 任务报告响应:`, response.data);
+    return response.data;
+  },
+
+  // 关联报告到任务
+  linkReportToTask: async (taskId: string, reportData: {
+    fileName: string;
+    format: 'html' | 'excel' | 'json';
+    filePath: string;
+    downloadUrl: string;
+    viewUrl?: string;
+    size: number;
+  }): Promise<ApiResponse> => {
+    console.log(`🔗 [API] 关联报告到任务: ${taskId}`, reportData);
+    const response = await api.post(`/compare/reports/${taskId}`, reportData);
+    console.log(`📥 [API] 关联报告响应:`, response.data);
+    return response.data;
+  },
+
+  // 重试失败的任务
+  retryTask: async (taskId: string): Promise<ApiResponse> => {
+    console.log(`🔄 [API] 重试任务: ${taskId}`);
+    const response = await api.post(`/compare/retry/${taskId}`);
+    console.log(`📥 [API] 重试任务响应:`, response.data);
+    return response.data;
+  },
+
+  // 取消运行中的任务
+  cancelTask: async (taskId: string): Promise<ApiResponse> => {
+    console.log(`🛑 [API] 取消任务: ${taskId}`);
+    const response = await api.post(`/compare/cancel/${taskId}`);
+    console.log(`📥 [API] 取消任务响应:`, response.data);
+    return response.data;
+  },
+
+  // 获取服务统计信息
+  getServiceStats: async (): Promise<ApiResponse<{
+    activeTasks: number;
+    totalTasks: number;
+    completedTasks: number;
+    runningTasks: number;
+    errorTasks: number;
+    storageSize: number;
+    averageCompletionTime?: number;
+  }>> => {
+    console.log(`📊 [API] 获取服务统计`);
+    const response = await api.get('/compare/stats');
+    console.log(`📥 [API] 服务统计响应:`, response.data);
+    return response.data;
+  },
+
   // 获取详细差异数据
   getDifferences: async (
     taskId: string,
@@ -123,8 +220,9 @@ export const compareApi = {
   },
 
   // 清理过期任务
-  cleanupTasks: async (): Promise<ApiResponse> => {
-    const response = await api.delete('/compare/cleanup');
+  cleanupTasks: async (maxAge?: number): Promise<ApiResponse<{ cleanedCount: number }>> => {
+    const params = maxAge ? { maxAge } : {};
+    const response = await api.delete('/compare/cleanup', { params });
     return response.data;
   },
 };
