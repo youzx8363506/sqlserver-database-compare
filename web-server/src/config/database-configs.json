@@ -1,4 +1,23 @@
 {
-  "lastUsed": null,
+  "lastUsed": {
+    "source": {
+      "server": "219.147.24.90,26923",
+      "database": "DB_TEST",
+      "authentication": {
+        "type": "sql",
+        "username": "Test",
+        "password": "TPV4pd9b$gqrUmcb"
+      }
+    },
+    "target": {
+      "server": "219.147.24.90,26923",
+      "database": "DB_TEST",
+      "authentication": {
+        "type": "sql",
+        "username": "Test",
+        "password": "TPV4pd9b$gqrUmcb"
+      }
+    }
+  },
   "savedConfigs": []
 }

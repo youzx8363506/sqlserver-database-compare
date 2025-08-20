@@ -12,6 +12,7 @@ import {
   FunctionComparer 
 } from './comparers';
 import { Logger } from './utils/logger';
+import { parseServerAddress } from './utils/server-parser';
 import { 
   DatabaseConfig, 
   ComparisonResult, 
@@ -38,19 +39,23 @@ export class DatabaseCompareApp {
     // 使用简单的连接方式，避免DatabaseConnection的复杂性
     const sql = require('mssql');
     
-    // 创建连接函数 - 完全复制test-connection的成功逻辑
+    // 创建连接函数 - 完全复制test-connection的成功逻辑，并添加IP地址逗号处理
     const createDatabaseConnection = async (server: string, database: string, authType: string, username?: string, password?: string) => {
       // 🔧 标识日志：证明使用了新的连接逻辑 - 同时输出到控制台和日志
       console.log('🚀 [NEW-CONNECTION-LOGIC] 使用修改后的数据库连接逻辑');
-      console.log('🔧 [NEW-CONNECTION-LOGIC] 连接函数版本: 2025-08-19-修复SSL协议问题');
+      console.log('🔧 [NEW-CONNECTION-LOGIC] 连接函数版本: 2025-08-20-修复IP逗号处理');
       this.logger.info('🚀 [NEW-CONNECTION-LOGIC] 使用修改后的数据库连接逻辑');
-      this.logger.info('🔧 [NEW-CONNECTION-LOGIC] 连接函数版本: 2025-08-19-修复SSL协议问题');
+      this.logger.info('🔧 [NEW-CONNECTION-LOGIC] 连接函数版本: 2025-08-20-修复IP逗号处理');
+      
+      // 解析服务器地址和端口号，处理IP地址中的逗号
+      const parsedServer = parseServerAddress(server);
+      console.log('🔧 [NEW-CONNECTION-LOGIC] 解析的服务器信息:', parsedServer);
+      this.logger.info(`解析服务器地址: ${JSON.stringify(parsedServer)}`);
       
       // 使用与test-connection完全相同的配置
       const config: any = {
-        server: server,
+        server: parsedServer.server,
         database: database,
-        port: 1433,
         options: {
           encrypt: false,
           trustServerCertificate: true,
@@ -60,6 +65,11 @@ export class DatabaseCompareApp {
         connectionTimeout: 10000,
         requestTimeout: 10000
       };
+
+      // 只有当端口不是-1时才设置端口（-1表示使用逗号格式，让mssql自己处理）
+      if (parsedServer.port !== -1) {
+        config.port = parsedServer.port;
+      }
 
       // 根据认证类型添加用户信息
       if (authType === 'sql') {

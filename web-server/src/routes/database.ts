@@ -5,6 +5,7 @@ import { DatabaseConnection } from '../../../src/connections/connection';
 import { TableExtractor } from '../../../src/extractors/tables';
 import { Logger } from '../../../src/utils/logger';
 import { DatabaseConfig } from '../../../src/types';
+import { parseServerAddress } from '../../../src/utils/server-parser';
 
 const router = express.Router();
 const logger = new Logger('info', path.join(__dirname, '../../../logs/web-server.log'));
@@ -29,20 +30,34 @@ router.post('/test-quick-connection', async (req, res) => {
       });
     }
 
+    // 解析服务器地址和端口号
+    const parsedServer = parseServerAddress(server as string);
+    
     // 使用test-quick.js的完全相同配置
     const config: any = {
-      server: server,
       database: database,
-      port: 1433,
       options: {
         encrypt: false,
         trustServerCertificate: true,
         enableArithAbort: true,
         useUTC: false
       },
-      connectionTimeout: 10000,
-      requestTimeout: 10000
+      connectionTimeout: 30000,
+      requestTimeout: 30000
     };
+
+    // 处理服务器地址和端口
+    if (parsedServer.server.includes(',')) {
+      // 对于逗号格式，分离服务器和端口
+      const parts = parsedServer.server.split(',');
+      config.server = parts[0];
+      config.port = parseInt(parts[1], 10);
+    } else {
+      config.server = parsedServer.server;
+      if (parsedServer.port !== -1) {
+        config.port = parsedServer.port;
+      }
+    }
 
     // 根据认证类型添加用户信息
     if (authType === 'sql') {
@@ -51,7 +66,7 @@ router.post('/test-quick-connection', async (req, res) => {
     }
 
     logger.info('🚀 使用test-quick风格连接测试');
-    logger.info(`目标服务器: ${server}:1433`);
+    logger.info(`目标服务器: ${parsedServer.port === -1 ? parsedServer.server : `${parsedServer.server}:${parsedServer.port}`}`);
     logger.info(`目标数据库: ${database}`);
     logger.info(`认证方式: ${authType || 'windows'}`);
 
@@ -138,20 +153,34 @@ router.post('/test-connection', async (req, res) => {
       });
     }
 
+    // 解析服务器地址和端口号
+    const parsedServer2 = parseServerAddress(server as string);
+    
     // 使用与test-quick完全相同的配置
     const config: any = {
-      server: server,
       database: database,
-      port: 1433,
       options: {
         encrypt: false,
         trustServerCertificate: true,
         enableArithAbort: true,
         useUTC: false
       },
-      connectionTimeout: 10000,
-      requestTimeout: 10000
+      connectionTimeout: 30000,
+      requestTimeout: 30000
     };
+
+    // 处理服务器地址和端口
+    if (parsedServer2.server.includes(',')) {
+      // 对于逗号格式，分离服务器和端口
+      const parts = parsedServer2.server.split(',');
+      config.server = parts[0];
+      config.port = parseInt(parts[1], 10);
+    } else {
+      config.server = parsedServer2.server;
+      if (parsedServer2.port !== -1) {
+        config.port = parsedServer2.port;
+      }
+    }
 
     // 根据认证类型添加用户信息
     if (authentication.type === 'sql') {
@@ -160,7 +189,7 @@ router.post('/test-connection', async (req, res) => {
     }
 
     logger.info('🚀 使用与test-quick相同的连接方式测试');
-    logger.info(`目标服务器: ${server}:1433`);
+    logger.info(`目标服务器: ${parsedServer2.port === -1 ? parsedServer2.server : `${parsedServer2.server}:${parsedServer2.port}`}`);
     logger.info(`目标数据库: ${database}`);
     logger.info(`认证方式: ${authentication.type || 'windows'}`);
 

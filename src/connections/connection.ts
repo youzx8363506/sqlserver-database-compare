@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { DatabaseConfig } from '../types';
 import { Logger } from '../utils/logger';
+import { parseServerAddress } from '../utils/server-parser';
 
 export class DatabaseConnection {
   private config: sql.config;
@@ -17,8 +18,11 @@ export class DatabaseConnection {
     this.originalConfig = config;
     this.config = this.buildConnectionConfig(config);
     
+    // 解析服务器地址和端口号用于日志记录
+    const parsedServerForLog = parseServerAddress(config.server);
+    
     // 记录连接初始化信息到主日志
-    this.logger.info(`初始化数据库连接配置 - 服务器: ${config.server}:${config.port || 1433}`);
+    this.logger.info(`初始化数据库连接配置 - 服务器: ${parsedServerForLog.server}:${parsedServerForLog.port}`);
     this.logger.info(`目标数据库: ${config.database}`);
     this.logger.info(`认证方式: ${config.authentication.type}`);
     this.logger.info(`连接超时: ${config.options?.connectionTimeout ?? 30000}ms, 请求超时: ${config.options?.requestTimeout ?? 60000}ms`);
@@ -100,7 +104,7 @@ export class DatabaseConnection {
     
     this.logToFile('='.repeat(80));
     this.logToFile(`连接日志开始 - ${new Date().toLocaleString()}`);
-    this.logToFile(`目标服务器: ${config.server}:${config.port || 1433}`);
+    this.logToFile(`目标服务器: ${parsedServerForLog.server}:${parsedServerForLog.port}`);
     this.logToFile(`目标数据库: ${config.database}`);
     this.logToFile(`认证类型: ${config.authentication.type}`);
     this.logToFile('='.repeat(80));
@@ -223,11 +227,14 @@ export class DatabaseConnection {
     console.log('🔧 [DatabaseConnection] 构建连接配置开始');
     console.log('🔧 [DatabaseConnection] 输入配置:', JSON.stringify(config, null, 2));
     
+    // 解析服务器地址和端口号
+    const parsedServer = parseServerAddress(config.server);
+    console.log('🔧 [DatabaseConnection] 解析的服务器信息:', parsedServer);
+    
     // 完全按照test-quick.js成功配置的格式 - 确保SSL完全禁用
     const sqlConfig: sql.config = {
-      server: config.server,
+      server: parsedServer.server,  // 添加必需的server属性
       database: config.database,
-      port: config.port || 1433,
       options: {
         encrypt: false,           // 禁用加密
         trustServerCertificate: true,  // 信任服务器证书
@@ -237,6 +244,21 @@ export class DatabaseConnection {
       connectionTimeout: config.options?.connectionTimeout ?? 10000,
       requestTimeout: config.options?.requestTimeout ?? 10000
     };
+
+    // 处理服务器地址和端口 - 与Web API保持一致
+    if (parsedServer.server.includes(',')) {
+      // 对于逗号格式，分离服务器和端口
+      const parts = parsedServer.server.split(',');
+      if (parts[0] && parts[1]) {  // 添加类型检查
+        sqlConfig.server = parts[0];
+        sqlConfig.port = parseInt(parts[1], 10);
+      }
+    } else {
+      sqlConfig.server = parsedServer.server;
+      if (parsedServer.port !== -1) {
+        sqlConfig.port = parsedServer.port;
+      }
+    }
 
     if (config.authentication.type === 'sql') {
       if (!config.authentication.username || !config.authentication.password) {

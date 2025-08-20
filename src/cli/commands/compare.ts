@@ -2,6 +2,7 @@ import { DatabaseConfig, CliOptions, OutputFormat } from '../../types';
 import { DatabaseCompareApp } from '../../app';
 import { HtmlReporter, JsonReporter, ExcelReporter } from '../../reporters';
 import { Logger } from '../../utils/logger';
+import { parseServerAddress } from '../../utils/server-parser';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 // 简单的控制台彩色输出函数
@@ -98,8 +99,9 @@ export class CompareCommand {
   }
 
   private parseConnectionString(connectionString: string): DatabaseConfig {
-    // 简单的连接字符串解析
+    // CLI连接字符串解析
     // 格式: server.database 或 server.database;auth=sql;user=xxx;pass=xxx
+    // 注意：server部分可能包含端口，如：192.168.1.100,1433.mydatabase 或 192.168.1.100:1433.mydatabase
     const parts = connectionString.split(';');
     const [server, database] = parts[0]?.split('.') || [];
     
@@ -107,6 +109,8 @@ export class CompareCommand {
       throw new Error(`无效的连接字符串格式: ${connectionString}`);
     }
 
+    // CLI格式的server已经包含了完整的服务器地址（包括端口），无需额外解析
+    // parseServerAddress将在app.ts的连接函数中处理
     const config: DatabaseConfig = {
       server,
       database,
